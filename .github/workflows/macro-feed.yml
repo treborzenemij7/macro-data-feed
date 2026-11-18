@@ -2,7 +2,7 @@ name: macro-feed
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -14,18 +14,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch FRED and Finnhub data
+      - name: Fetch FRED, Finnhub and Twelve Data
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
         run: |
           python3 - <<'EOF'
           import json, os, urllib.request, urllib.parse, datetime
 
           fk = os.environ["FRED_API_KEY"]
           hk = os.environ["FINNHUB_API_KEY"]
+          tk = os.environ["TWELVEDATA_API_KEY"]
           now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-          out = {"updated_utc": now, "fred": {}, "finnhub": {}, "errors": []}
+          out = {"updated_utc": now, "fred": {}, "finnhub": {}, "twelvedata": {}, "errors": []}
 
           def get(url):
               with urllib.request.urlopen(url, timeout=20) as r:
@@ -48,6 +50,14 @@ jobs:
                   out["finnhub"][sym] = d
               except Exception as e:
                   out["errors"].append("Finnhub " + sym + ": " + type(e).__name__)
+
+          td_syms = ["XAU/USD", "EUR/USD", "GBP/USD", "USD/JPY",
+                     "USD/CHF", "AUD/USD", "USD/CAD", "NZD/USD"]
+          try:
+              q = urllib.parse.urlencode({"symbol": ",".join(td_syms), "apikey": tk})
+              out["twelvedata"] = get("https://api.twelvedata.com/quote?" + q)
+          except Exception as e:
+              out["errors"].append("TwelveData: " + type(e).__name__)
 
           os.makedirs("data", exist_ok=True)
           with open("data/macro.json", "w") as f:
